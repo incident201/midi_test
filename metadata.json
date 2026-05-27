@@ -1,0 +1,6 @@
+{
+  "name": "GenAlpha Detector",
+  "description": "Analyze and visualize MIDI tracks to detect Generation Alpha melody patterns and calculate confidence scores.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
