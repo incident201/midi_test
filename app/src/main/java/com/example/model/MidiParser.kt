@@ -236,7 +236,7 @@ object MidiParser {
             // Skip any unused bytes in this track chunk (in case trackLength was larger)
             val remaining = trackStream.availableBytes()
             if (remaining > 0) {
-                trackStream.skip(remaining)
+                trackStream.skip(remaining.toLong())
             }
         }
 
@@ -372,7 +372,7 @@ object MidiParser {
     }
 
     private fun readVlq(stream: InputStream): Long {
-        var value = 0Long
+        var value = 0L
         while (true) {
             val b = stream.read()
             if (b == -1) break
