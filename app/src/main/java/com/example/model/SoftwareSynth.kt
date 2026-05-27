@@ -91,33 +91,51 @@ class SoftwareSynth(
                     }
 
                     // Render synthesized chunk
+                    val startFrame = framesProcessed
+                    val endFrame = framesProcessed + bufferSize
+                    val sectionStartSecs = sectionStartTick.toDouble() / ticksPerSecond
+
+                    val blockStartSecs = sectionStartSecs + (startFrame - sectionStartFrames).toDouble() / sampleRate
+                    val blockEndSecs = sectionStartSecs + (endFrame - sectionStartFrames).toDouble() / sampleRate
+
+                    val blockStartTick = (blockStartSecs * ticksPerSecond).toLong()
+                    val blockEndTick = (blockEndSecs * ticksPerSecond).toLong()
+
+                    // Pre-filter active notes for this 23ms block to avoid iterating all notes inside inner loop
+                    val activeNotesInBlock = notes.filter { note ->
+                        note.startTick <= blockEndTick + 10 && note.endTick >= blockStartTick - 10
+                    }.take(16) // Max 16 notes to guarantee real-time performance
+
                     for (frameIndex in 0 until bufferSize) {
                         val localFrame = framesProcessed + frameIndex
-                        val localTicksSinceSection = ((localFrame - sectionStartFrames).toDouble() / sampleRate * ticksPerSecond).toLong()
-                        val frameTick = sectionStartTick + localTicksSinceSection
+                        val currentFrameSecs = sectionStartSecs + (localFrame - sectionStartFrames).toDouble() / sampleRate
+                        val frameTick = (currentFrameSecs * ticksPerSecond).toLong()
 
-                        // Find notes sounding at FrameTick
                         var sampleSum = 0.0
                         var soundingCount = 0
 
-                        // Standard safety optimization: filter search for active notes in sorted array
-                        var activeNotesCount = 0
-                        for (i in notes.indices) {
-                            val note = notes[i]
+                        for (i in activeNotesInBlock.indices) {
+                            val note = activeNotesInBlock[i]
                             if (note.startTick <= frameTick && note.endTick >= frameTick) {
                                 soundingCount++
                                 val frequency = 440.0 * Math.pow(2.0, (note.pitch - 69) / 12.0)
-                                val noteSecs = (frameTick - note.startTick).toDouble() / ticksPerSecond
+                                val noteSecs = maxOf(0.0, currentFrameSecs - (note.startTick.toDouble() / ticksPerSecond))
 
                                 // Physical modeling impulse string pluck formula
-                                val envelope = exp(-3.5 * noteSecs) * (1.0 - exp(-75.0 * noteSecs))
-                                val angle = noteSecs * 2.0 * Math.PI * frequency
+                                val envelope = exp(-4.0 * noteSecs) * (1.0 - exp(-80.0 * noteSecs))
 
-                                // Mix fundamental frequency with a rich 1st overtone for string-like warmth
-                                val noteSample = (sin(angle) * 0.7 + sin(2.0 * angle) * 0.25) * envelope
+                                // Fast linear fade-out release phase to avoid sharp audio clicks when notes cut off
+                                val timeRemaining = (note.endTick.toDouble() / ticksPerSecond) - currentFrameSecs
+                                val releaseMultiplier = if (timeRemaining < 0.04) {
+                                    maxOf(0.0, timeRemaining / 0.04)
+                                } else {
+                                    1.0
+                                }
+
+                                val angle = noteSecs * 2.0 * Math.PI * frequency
+                                // Warm additive synth wave: fundamental sine + warm odd/even harmonic content
+                                val noteSample = (sin(angle) * 0.65 + sin(2.0 * angle) * 0.20 + sin(3.0 * angle) * 0.10) * envelope * releaseMultiplier
                                 sampleSum += noteSample
-                                activeNotesCount++
-                                if (activeNotesCount >= 8) break // Max 8 voices polyphony to prevent clipping/lag
                             }
                         }
 
